@@ -18,6 +18,8 @@ public final class MainActivity extends Activity {
     private static final int BACK = Color.rgb(8,10,14), CARD = Color.rgb(25,29,36), BLUE = Color.rgb(21,127,255), WHITE = Color.WHITE, GRAY = Color.rgb(148,155,167);
     private final ArrayList<Task> roots = new ArrayList<>();
     private LinearLayout rows;
+    private Task active;
+    @Override public void onBackPressed(){if(active!=null){active=null;render();}else super.onBackPressed();}
     private long nextId = 1;
     private static class Task {
         long id; String name; boolean done, expanded = true; final ArrayList<Task> children = new ArrayList<>();
@@ -31,13 +33,14 @@ public final class MainActivity extends Activity {
         FrameLayout frame = new FrameLayout(this); frame.setBackgroundColor(BACK);
         LinearLayout page=new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
         LinearLayout header=new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL); header.setPadding(dp(20),dp(12),dp(16),dp(12));
-        TextView title=text("Декомпозитор",23,WHITE); title.setTypeface(null,Typeface.BOLD);header.addView(title,new LinearLayout.LayoutParams(0,dp(54),1));
-        TextView add=text("＋",32,BLUE);add.setGravity(Gravity.CENTER);header.addView(add,new LinearLayout.LayoutParams(dp(48),dp(54)));add.setContentDescription("Добавить главную задачу");add.setOnClickListener(v->edit(null,null));
+        if(active!=null && !roots.contains(active))active=null;
+        if(active!=null){TextView back=text("‹",32,WHITE);header.addView(back,new LinearLayout.LayoutParams(dp(40),dp(54)));back.setOnClickListener(v->{active=null;render();});}
+        TextView title=text(active==null?"Декомпозитор":active.name,23,WHITE); title.setTypeface(null,Typeface.BOLD);header.addView(title,new LinearLayout.LayoutParams(0,dp(54),1));
         page.addView(header);
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true);
         rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));frame.addView(page);
-        TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(null,null));fab.setContentDescription("Добавить задачу");
+        TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(active,null));fab.setContentDescription("Добавить задачу");
         if(android.os.Build.VERSION.SDK_INT>=35) frame.setOnApplyWindowInsetsListener((v,insets)->{
             if(android.os.Build.VERSION.SDK_INT>=30){
                 android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
@@ -48,7 +51,15 @@ public final class MainActivity extends Activity {
         setContentView(frame);
         if(android.os.Build.VERSION.SDK_INT>=35) frame.requestApplyInsets();
         if(roots.isEmpty()){TextView hint=text("Нажмите +, чтобы создать первую задачу",16,GRAY);hint.setGravity(Gravity.CENTER);rows.addView(hint,new LinearLayout.LayoutParams(-1,dp(150)));}
-        else for(Task task:roots) addRow(task,0);
+        else if(active!=null)addRow(active,0);else for(Task task:roots)addProject(task);
+    }
+    private void addProject(Task t){
+        LinearLayout card=new LinearLayout(this);card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(67));lp.setMargins(0,dp(6),0,0);
+        TextView ring=text(percent(t)+"%",14,WHITE);ring.setTypeface(null,Typeface.BOLD);ring.setGravity(Gravity.CENTER);GradientDrawable border=bg(CARD,64);border.setStroke(dp(4),percent(t)==0?GRAY:BLUE);ring.setBackground(border);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
+        TextView name=text(t.name,16,WHITE);name.setMaxLines(2);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
+        TextView arrow=text("›",28,BLUE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));
+        card.setOnClickListener(v->{active=t;render();});card.setOnLongClickListener(v->{options(t);return true;});rows.addView(card,lp);
     }
     private void addRow(Task t,int depth) {
         LinearLayout card=new LinearLayout(this); card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
