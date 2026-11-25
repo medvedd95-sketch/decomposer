@@ -19,9 +19,26 @@ jobs:
         run: |
           mkdir -p app/src/main/res/drawable
           base64 -d app/icon.webp.b64 > app/src/main/res/drawable/ic_launcher.webp
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon
+      - name: Build and verify permanently signed APK
+        env:
+          SIGNING_BUNDLE: ${{ secrets.DECOMPOSER_SIGNING }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$SIGNING_BUNDLE"
+          ks="$RUNNER_TEMP/decomposer.p12"
+          trap 'rm -f "$ks"' EXIT
+          export KS_PASS="${SIGNING_BUNDLE%%:*}"
+          printf '%s' "${SIGNING_BUNDLE#*:}" | base64 --decode > "$ks"
+          unset SIGNING_BUNDLE
+          gradle :app:assembleRelease --no-daemon
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/zipalign" -f -p 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$ks" --ks-key-alias decomposer --ks-pass env:KS_PASS --key-pass env:KS_PASS --out "$RUNNER_TEMP/Decomposer.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --print-certs "$RUNNER_TEMP/Decomposer.apk" | tee "$RUNNER_TEMP/signing-report"
+          grep -Fi "Signer #1 certificate SHA-256 digest: 05c5115b7104211398e1448c34a24a6ef48599ac0e67d53f699fcb3f8e32d093" "$RUNNER_TEMP/signing-report"
       - uses: actions/upload-artifact@v4
         with:
-          name: decomposer-v0.1-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Decomposer-APK
+          path: ${{ runner.temp }}/Decomposer.apk
+          if-no-files-found: error
