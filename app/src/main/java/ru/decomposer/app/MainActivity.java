@@ -38,7 +38,15 @@ public final class MainActivity extends Activity {
         rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));frame.addView(page);
         TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(null,null));fab.setContentDescription("Добавить задачу");
+        if(android.os.Build.VERSION.SDK_INT>=35) frame.setOnApplyWindowInsetsListener((v,insets)->{
+            if(android.os.Build.VERSION.SDK_INT>=30){
+                android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+                v.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+            }
+            return insets;
+        });
         setContentView(frame);
+        if(android.os.Build.VERSION.SDK_INT>=35) frame.requestApplyInsets();
         if(roots.isEmpty()){TextView hint=text("Нажмите +, чтобы создать первую задачу",16,GRAY);hint.setGravity(Gravity.CENTER);rows.addView(hint,new LinearLayout.LayoutParams(-1,dp(150)));}
         else for(Task task:roots) addRow(task,0);
     }
@@ -60,7 +68,7 @@ public final class MainActivity extends Activity {
     private int completed(Task t){if(t.children.isEmpty())return t.done?1:0;int n=0;for(Task c:t.children)n+=completed(c);return n;}
     private int percent(Task t){return (int)Math.round(100.0*completed(t)/leaves(t));}
     private void options(Task t){String[] choices={"Добавить подзадачу","Переименовать","Переместить","Удалить"};new AlertDialog.Builder(this).setTitle(t.name).setItems(choices,(dialog,which)->{if(which==0)edit(t,null);if(which==1)edit(null,t);if(which==2)move(t);if(which==3)delete(t);}).show();}
-    private void edit(Task parent,Task editing){EditText input=new EditText(this);input.setSingleLine(false);input.setTextColor(Color.BLACK);input.setHint("Название задачи");if(editing!=null)input.setText(editing.name);
+    private void edit(Task parent,Task editing){EditText input=new EditText(this);input.setSingleLine(false);input.setTextColor(WHITE);input.setHintTextColor(GRAY);input.setHint("Название задачи");if(editing!=null)input.setText(editing.name);
         LinearLayout wrap=new LinearLayout(this);wrap.setPadding(dp(20),0,dp(20),0);wrap.addView(input,new LinearLayout.LayoutParams(-1,-2));
         new AlertDialog.Builder(this).setTitle(editing!=null?"Переименовать":"Новая задача").setView(wrap).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{String s=input.getText().toString().trim();if(s.isEmpty())return;if(editing!=null)editing.name=s;else{Task n=new Task(nextId++,s);if(parent==null)roots.add(n);else{parent.children.add(n);parent.expanded=true;parent.done=false;}}save();render();}).show(); }
     private void delete(Task t){new AlertDialog.Builder(this).setTitle("Удалить задачу?").setMessage("Все вложенные подзадачи тоже будут удалены.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{remove(t,roots);save();render();}).show();}
