@@ -44,7 +44,7 @@ public final class MainActivity extends Activity {
         for(TextView tab:new TextView[]{tree,work}){tab.setGravity(Gravity.CENTER);tabs.addView(tab,new LinearLayout.LayoutParams(0,dp(48),1));}
         tree.setOnClickListener(v->{workView=false;render();});work.setOnClickListener(v->{workView=true;render();});page.addView(tabs);}
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true);
-        rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
+        rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);if(active!=null){HorizontalScrollView horizontal=new HorizontalScrollView(this);horizontal.setFillViewport(true);horizontal.addView(rows,new FrameLayout.LayoutParams(-2,-2));scroll.addView(horizontal,new FrameLayout.LayoutParams(-1,-2));int width=getResources().getDisplayMetrics().widthPixels;rows.setMinimumWidth(width+dp(Math.max(0,visibleDepth(active)-3)*32));}else scroll.addView(rows);
         page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));frame.addView(page);
         TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(active,null));fab.setContentDescription("Добавить задачу");if(active==null && workView)fab.setVisibility(View.GONE);
         if(android.os.Build.VERSION.SDK_INT>=35) frame.setOnApplyWindowInsetsListener((v,insets)->{
@@ -86,18 +86,29 @@ public final class MainActivity extends Activity {
         TextView arrow=text("›",28,BLUE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));
         card.setOnClickListener(v->{active=t;render();});card.setOnLongClickListener(v->{options(t);return true;});rows.addView(card,lp);
     }
-    private void addRow(Task t,int depth) {
+    private int visibleDepth(Task t){int n=0;if(t.expanded)for(Task c:t.children)n=Math.max(n,1+visibleDepth(c));return n;}
+    private void addRow(Task t,int depth){addRow(t,depth,new ArrayList<Boolean>());}
+    private void addRow(Task t,int depth,List<Boolean> continuations) {
         LinearLayout card=new LinearLayout(this); card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
-        LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,dp(67));cardLp.setMargins(dp(Math.min(depth,6)*17),dp(6),0,0);
-        if(depth>0){TextView branch=text("└",25,GRAY);branch.setGravity(Gravity.CENTER);card.addView(branch,new LinearLayout.LayoutParams(dp(22),-1));}
+        LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,dp(depth==0?67:60));cardLp.setMargins(dp(depth*32),dp(6),0,0);
         int progress=percent(t);
         TextView ring=progressRing(progress);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
         TextView name=text((t.working&&!finished(t)?"▶ ":"")+t.name+(t.comment.isEmpty()?"":"  ▤"),16,WHITE);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         if(!t.children.isEmpty()){TextView count=text(completed(t)+"/"+leaves(t),12,GRAY);card.addView(count);TextView arrow=text(t.expanded?"⌄":"›",25,WHITE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));arrow.setOnClickListener(v->{t.expanded=!t.expanded;save();render();});}
         else {CheckBox box=new CheckBox(this);box.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));box.setChecked(t.done);card.addView(box);box.setOnCheckedChangeListener((button,checked)->{t.done=checked;save();render();});}
-        rows.addView(card,cardLp);if(t.id==focusId){focusId=-1;card.post(()->card.requestRectangleOnScreen(new android.graphics.Rect(0,0,card.getWidth(),card.getHeight()),true));}
+        FrameLayout row=new FrameLayout(this);
+        row.addView(new View(this){
+            final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(android.graphics.Canvas c){super.onDraw(c);p.setColor(GRAY);p.setStrokeWidth(dp(1.5f));p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+                float mid=dp(6+(depth==0?67:60)/2f);
+                for(int i=0;i<depth;i++){float x=dp(i*32+16);boolean last=i==depth-1;if(last){c.drawLine(x,0,x,mid,p);c.drawLine(x,mid,dp(depth*32+3),mid,p);if(continuations.get(i))c.drawLine(x,mid,x,getHeight(),p);}else if(continuations.get(i))c.drawLine(x,0,x,getHeight(),p);}
+            }
+        },new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(-1,cardLp.height);cp.setMargins(depth*dp(32),dp(6),0,0);row.addView(card,cp);
+        if(t.expanded&&!t.children.isEmpty()){View stem=new View(this);stem.setBackgroundColor(GRAY);FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(dp(1.5f),dp(6),Gravity.BOTTOM|Gravity.LEFT);sp.leftMargin=dp(depth*32+16);row.addView(stem,sp);}
+        rows.addView(row,new LinearLayout.LayoutParams(-1,dp((depth==0?67:60)+12)));if(t.id==focusId){focusId=-1;card.post(()->card.requestRectangleOnScreen(new android.graphics.Rect(0,0,card.getWidth(),card.getHeight()),true));}
         name.setOnClickListener(v->options(t));ring.setOnClickListener(v->options(t));card.setOnLongClickListener(v->{options(t);return true;});
-        if(t.expanded)for(Task c:t.children)addRow(c,depth+1);
+        if(t.expanded)for(int i=0;i<t.children.size();i++){ArrayList<Boolean> next=new ArrayList<>(continuations);next.add(i<t.children.size()-1);addRow(t.children.get(i),depth+1,next);}
     }
     private int leaves(Task t){if(t.children.isEmpty())return 1;int n=0;for(Task c:t.children)n+=leaves(c);return n;}
     private int completed(Task t){if(t.children.isEmpty())return t.done?1:0;int n=0;for(Task c:t.children)n+=completed(c);return n;}
