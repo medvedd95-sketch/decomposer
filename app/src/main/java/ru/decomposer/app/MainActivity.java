@@ -19,10 +19,12 @@ public final class MainActivity extends Activity {
     private final ArrayList<Task> roots = new ArrayList<>();
     private LinearLayout rows;
     private Task active;
-    @Override public void onBackPressed(){if(active!=null){active=null;render();}else super.onBackPressed();}
+    private boolean workView=false;
+    private long focusId=-1;
+    @Override public void onBackPressed(){if(active!=null){active=null;render();}else if(workView){workView=false;render();}else super.onBackPressed();}
     private long nextId = 1;
     private static class Task {
-        long id; String name; boolean done, expanded = true; final ArrayList<Task> children = new ArrayList<>();
+        long id; String name; boolean done, working, expanded = true; final ArrayList<Task> children = new ArrayList<>();
         Task(long id, String name) { this.id=id; this.name=name; }
     }
     @Override public void onCreate(Bundle b) { super.onCreate(b); getWindow().setStatusBarColor(BACK); getWindow().setNavigationBarColor(BACK); load(); render(); }
@@ -37,10 +39,14 @@ public final class MainActivity extends Activity {
         if(active!=null){TextView back=text("‹",32,WHITE);header.addView(back,new LinearLayout.LayoutParams(dp(40),dp(54)));back.setOnClickListener(v->{active=null;render();});}
         TextView title=text(active==null?"Декомпозитор":active.name,23,WHITE); title.setTypeface(null,Typeface.BOLD);header.addView(title,new LinearLayout.LayoutParams(0,dp(54),1));
         page.addView(header);
+        if(active==null){LinearLayout tabs=new LinearLayout(this);tabs.setPadding(dp(14),0,dp(14),0);
+        TextView tree=text("Дерево задач",16,workView?GRAY:BLUE), work=text("В работе ("+workCount(roots)+")",16,workView?BLUE:GRAY);
+        for(TextView tab:new TextView[]{tree,work}){tab.setGravity(Gravity.CENTER);tabs.addView(tab,new LinearLayout.LayoutParams(0,dp(48),1));}
+        tree.setOnClickListener(v->{workView=false;render();});work.setOnClickListener(v->{workView=true;render();});page.addView(tabs);}
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true);
         rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));frame.addView(page);
-        TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(active,null));fab.setContentDescription("Добавить задачу");
+        TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(active,null));fab.setContentDescription("Добавить задачу");if(active==null && workView)fab.setVisibility(View.GONE);
         if(android.os.Build.VERSION.SDK_INT>=35) frame.setOnApplyWindowInsetsListener((v,insets)->{
             if(android.os.Build.VERSION.SDK_INT>=30){
                 android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
@@ -50,7 +56,8 @@ public final class MainActivity extends Activity {
         });
         setContentView(frame);
         if(android.os.Build.VERSION.SDK_INT>=35) frame.requestApplyInsets();
-        if(roots.isEmpty()){TextView hint=text("Нажмите +, чтобы создать первую задачу",16,GRAY);hint.setGravity(Gravity.CENTER);rows.addView(hint,new LinearLayout.LayoutParams(-1,dp(150)));}
+        if(active==null && workView){if(workCount(roots)==0)rows.addView(text("Нет активных задач",16,GRAY));else for(Task root:roots)addWork(root,"",root);}
+        else if(roots.isEmpty()){TextView hint=text("Нажмите +, чтобы создать первую задачу",16,GRAY);hint.setGravity(Gravity.CENTER);rows.addView(hint,new LinearLayout.LayoutParams(-1,dp(150)));}
         else if(active!=null)addRow(active,0);else for(Task task:roots)addProject(task);
     }
     private TextView progressRing(int progress) {
@@ -75,7 +82,7 @@ public final class MainActivity extends Activity {
         LinearLayout card=new LinearLayout(this);card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(67));lp.setMargins(0,dp(6),0,0);
         TextView ring=progressRing(percent(t));card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
-        TextView name=text(t.name,16,WHITE);name.setMaxLines(2);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
+        TextView name=text((t.working&&!finished(t)?"▶ ":"")+t.name,16,WHITE);name.setMaxLines(2);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         TextView arrow=text("›",28,BLUE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));
         card.setOnClickListener(v->{active=t;render();});card.setOnLongClickListener(v->{options(t);return true;});rows.addView(card,lp);
     }
@@ -85,10 +92,10 @@ public final class MainActivity extends Activity {
         if(depth>0){TextView branch=text("└",25,GRAY);branch.setGravity(Gravity.CENTER);card.addView(branch,new LinearLayout.LayoutParams(dp(22),-1));}
         int progress=percent(t);
         TextView ring=progressRing(progress);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
-        TextView name=text(t.name,16,WHITE);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
+        TextView name=text((t.working&&!finished(t)?"▶ ":"")+t.name,16,WHITE);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         if(!t.children.isEmpty()){TextView count=text(completed(t)+"/"+leaves(t),12,GRAY);card.addView(count);TextView arrow=text(t.expanded?"⌄":"›",25,WHITE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));arrow.setOnClickListener(v->{t.expanded=!t.expanded;save();render();});}
         else {CheckBox box=new CheckBox(this);box.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));box.setChecked(t.done);card.addView(box);box.setOnCheckedChangeListener((button,checked)->{t.done=checked;save();render();});}
-        rows.addView(card,cardLp);
+        rows.addView(card,cardLp);if(t.id==focusId){focusId=-1;card.post(()->card.requestRectangleOnScreen(new android.graphics.Rect(0,0,card.getWidth(),card.getHeight()),true));}
         name.setOnClickListener(v->options(t));ring.setOnClickListener(v->options(t));card.setOnLongClickListener(v->{options(t);return true;});
         if(t.expanded)for(Task c:t.children)addRow(c,depth+1);
     }
@@ -96,7 +103,27 @@ public final class MainActivity extends Activity {
     private int completed(Task t){if(t.children.isEmpty())return t.done?1:0;int n=0;for(Task c:t.children)n+=completed(c);return n;}
     private double exactPercent(Task t){if(t.children.isEmpty())return t.done?100.0:0.0;double sum=0;for(Task c:t.children)sum+=exactPercent(c);return sum/t.children.size();}
     private int percent(Task t){return (int)Math.round(exactPercent(t));}
-    private void options(Task t){String[] choices={"Добавить подзадачу","Переименовать","Переместить","Удалить"};new AlertDialog.Builder(this).setTitle(t.name).setItems(choices,(dialog,which)->{if(which==0)edit(t,null);if(which==1)edit(null,t);if(which==2)move(t);if(which==3)delete(t);}).show();}
+    private boolean finished(Task t){return completed(t)==leaves(t);}
+    private int workCount(List<Task> list){int n=0;for(Task t:list){if(t.working&&!finished(t))n++;n+=workCount(t.children);}return n;}
+    private void clearFinished(Task t){if(finished(t))t.working=false;for(Task c:t.children)clearFinished(c);}
+    private boolean expandPath(Task t,Task target){if(t==target)return true;for(Task c:t.children)if(expandPath(c,target)){t.expanded=true;return true;}return false;}
+    private void workAction(LinearLayout card,String label,Runnable action){TextView b=text(label,14,BLUE);b.setPadding(dp(8),dp(10),dp(8),dp(10));card.addView(b);b.setOnClickListener(v->action.run());}
+    private void addWork(Task t,String path,Task root){
+        if(t.working&&!finished(t)){
+            LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(12),dp(10),dp(12),dp(10));card.setBackground(bg(CARD,18));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(8),0,0);rows.addView(card,lp);
+            LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(progressRing(percent(t)),new LinearLayout.LayoutParams(dp(47),dp(47)));TextView name=text("▶ "+t.name,16,WHITE);name.setPadding(dp(12),0,0,0);top.addView(name,new LinearLayout.LayoutParams(0,-2,1));card.addView(top);
+            card.addView(text(path.isEmpty()?"Проект":path,12,GRAY));
+            workAction(card,"+ Добавить подзадачу",()->edit(t,null));
+            workAction(card,"Открыть в дереве",()->{active=root;expandPath(root,t);focusId=t.id;save();render();});
+            if(t.children.isEmpty())workAction(card,"Завершить",()->{t.done=true;save();render();});
+            workAction(card,"Убрать из работы",()->{t.working=false;save();render();});
+            for(Task c:t.children)workChild(card,c,0);
+        }
+        for(Task c:t.children)addWork(c,path.isEmpty()?t.name:path+" → "+t.name,root);
+    }
+    private void workChild(LinearLayout card,Task t,int depth){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(Math.min(depth,6)*12),0,0,0);TextView name=text(t.name+" · "+percent(t)+"%",14,WHITE);line.addView(name,new LinearLayout.LayoutParams(0,dp(44),1));name.setOnClickListener(v->options(t));if(t.children.isEmpty()){CheckBox cb=new CheckBox(this);cb.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));cb.setChecked(t.done);line.addView(cb);cb.setOnCheckedChangeListener((b,c)->{t.done=c;save();render();});}card.addView(line);for(Task c:t.children)workChild(card,c,depth+1);}
+    private void options(Task t){String[] choices={"Добавить подзадачу","Переименовать","Переместить","Удалить",t.working?"Убрать из работы":"Взять в работу"};new AlertDialog.Builder(this).setTitle(t.name).setItems(choices,(dialog,which)->{if(which==0)edit(t,null);if(which==1)edit(null,t);if(which==2)move(t);if(which==3)delete(t);if(which==4){if(!t.working&&finished(t)){Toast.makeText(this,"Задача уже выполнена",Toast.LENGTH_SHORT).show();return;}t.working=!t.working;save();render();}}).show();}
     private void edit(Task parent,Task editing){EditText input=new EditText(this);input.setSingleLine(false);input.setTextColor(WHITE);input.setHintTextColor(GRAY);input.setHint("Название задачи");if(editing!=null)input.setText(editing.name);
         LinearLayout wrap=new LinearLayout(this);wrap.setPadding(dp(20),0,dp(20),0);wrap.addView(input,new LinearLayout.LayoutParams(-1,-2));
         new AlertDialog.Builder(this).setTitle(editing!=null?"Переименовать":"Новая задача").setView(wrap).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{String s=input.getText().toString().trim();if(s.isEmpty())return;if(editing!=null)editing.name=s;else{Task n=new Task(nextId++,s);if(parent==null)roots.add(n);else{parent.children.add(n);parent.expanded=true;parent.done=false;}}save();render();}).show(); }
@@ -105,8 +132,8 @@ public final class MainActivity extends Activity {
     private boolean contains(Task a,Task b){if(a==b)return true;for(Task x:a.children)if(contains(x,b))return true;return false;}
     private void move(Task t){ArrayList<Task> possible=new ArrayList<>();ArrayList<String> names=new ArrayList<>();names.add("В корень дерева");collect(roots,possible,names,t,0);new AlertDialog.Builder(this).setTitle("Переместить в...").setItems(names.toArray(new String[0]),(d,i)->{Task parent=i==0?null:possible.get(i-1);if(parent==null && roots.contains(t))return;remove(t,roots);if(parent==null)roots.add(t);else{parent.children.add(t);parent.expanded=true;parent.done=false;}save();render();}).show();}
     private void collect(List<Task> list,List<Task> out,List<String> names,Task moving,int depth){for(Task t:list){if(contains(moving,t))continue;out.add(t);StringBuilder indent=new StringBuilder();for(int n=0;n<Math.min(8,depth);n++)indent.append("  ");names.add(indent.toString()+t.name);collect(t.children,out,names,moving,depth+1);}}
-    private JSONObject toJson(Task t)throws Exception{JSONObject o=new JSONObject();o.put("id",t.id);o.put("name",t.name);o.put("done",t.done);o.put("expanded",t.expanded);JSONArray a=new JSONArray();for(Task c:t.children)a.put(toJson(c));o.put("children",a);return o;}
-    private Task fromJson(JSONObject o)throws Exception{Task t=new Task(o.getLong("id"),o.getString("name"));t.done=o.optBoolean("done");t.expanded=o.optBoolean("expanded",true);nextId=Math.max(nextId,t.id+1);JSONArray a=o.optJSONArray("children");if(a!=null)for(int i=0;i<a.length();i++)t.children.add(fromJson(a.getJSONObject(i)));return t;}
-    private void save(){try{JSONArray a=new JSONArray();for(Task t:roots)a.put(toJson(t));getPreferences(Context.MODE_PRIVATE).edit().putString("tasks",a.toString()).apply();}catch(Exception e){android.util.Log.e("Decomposer","Save failed",e);}}
+    private JSONObject toJson(Task t)throws Exception{JSONObject o=new JSONObject();o.put("id",t.id);o.put("name",t.name);o.put("done",t.done);o.put("working",t.working);o.put("expanded",t.expanded);JSONArray a=new JSONArray();for(Task c:t.children)a.put(toJson(c));o.put("children",a);return o;}
+    private Task fromJson(JSONObject o)throws Exception{Task t=new Task(o.getLong("id"),o.getString("name"));t.done=o.optBoolean("done");t.working=o.optBoolean("working",false);t.expanded=o.optBoolean("expanded",true);nextId=Math.max(nextId,t.id+1);JSONArray a=o.optJSONArray("children");if(a!=null)for(int i=0;i<a.length();i++)t.children.add(fromJson(a.getJSONObject(i)));return t;}
+    private void save(){try{for(Task t:roots)clearFinished(t);JSONArray a=new JSONArray();for(Task t:roots)a.put(toJson(t));getPreferences(Context.MODE_PRIVATE).edit().putString("tasks",a.toString()).apply();}catch(Exception e){android.util.Log.e("Decomposer","Save failed",e);}}
     private void load(){try{String data=getPreferences(Context.MODE_PRIVATE).getString("tasks",null);if(data==null)return;JSONArray a=new JSONArray(data);for(int i=0;i<a.length();i++)roots.add(fromJson(a.getJSONObject(i)));}catch(Exception e){android.util.Log.e("Decomposer","Load failed",e);}}
 }
