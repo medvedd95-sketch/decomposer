@@ -94,7 +94,8 @@ public final class MainActivity extends Activity {
     }
     private int leaves(Task t){if(t.children.isEmpty())return 1;int n=0;for(Task c:t.children)n+=leaves(c);return n;}
     private int completed(Task t){if(t.children.isEmpty())return t.done?1:0;int n=0;for(Task c:t.children)n+=completed(c);return n;}
-    private int percent(Task t){return (int)Math.round(100.0*completed(t)/leaves(t));}
+    private double exactPercent(Task t){if(t.children.isEmpty())return t.done?100.0:0.0;double sum=0;for(Task c:t.children)sum+=exactPercent(c);return sum/t.children.size();}
+    private int percent(Task t){return (int)Math.round(exactPercent(t));}
     private void options(Task t){String[] choices={"Добавить подзадачу","Переименовать","Переместить","Удалить"};new AlertDialog.Builder(this).setTitle(t.name).setItems(choices,(dialog,which)->{if(which==0)edit(t,null);if(which==1)edit(null,t);if(which==2)move(t);if(which==3)delete(t);}).show();}
     private void edit(Task parent,Task editing){EditText input=new EditText(this);input.setSingleLine(false);input.setTextColor(WHITE);input.setHintTextColor(GRAY);input.setHint("Название задачи");if(editing!=null)input.setText(editing.name);
         LinearLayout wrap=new LinearLayout(this);wrap.setPadding(dp(20),0,dp(20),0);wrap.addView(input,new LinearLayout.LayoutParams(-1,-2));
