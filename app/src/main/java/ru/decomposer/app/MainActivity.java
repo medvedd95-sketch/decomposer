@@ -113,7 +113,7 @@ public final class MainActivity extends Activity {
     private int leaves(Task t){if(t.children.isEmpty())return 1;int n=0;for(Task c:t.children)n+=leaves(c);return n;}
     private int completed(Task t){if(t.children.isEmpty())return t.done?1:0;int n=0;for(Task c:t.children)n+=completed(c);return n;}
     private double exactPercent(Task t){if(t.children.isEmpty())return t.done?100.0:0.0;double sum=0;for(Task c:t.children)sum+=exactPercent(c);return sum/t.children.size();}
-    private int percent(Task t){return (int)Math.round(exactPercent(t));}
+    private int percent(Task t){return (int)Math.round(100.0*completed(t)/leaves(t));}
     private boolean finished(Task t){return completed(t)==leaves(t);}
     private int workCount(List<Task> list){int n=0;for(Task t:list){if(t.working&&!finished(t))n++;n+=workCount(t.children);}return n;}
     private void clearFinished(Task t){if(finished(t))t.working=false;for(Task c:t.children)clearFinished(c);}
