@@ -53,10 +53,28 @@ public final class MainActivity extends Activity {
         if(roots.isEmpty()){TextView hint=text("Нажмите +, чтобы создать первую задачу",16,GRAY);hint.setGravity(Gravity.CENTER);rows.addView(hint,new LinearLayout.LayoutParams(-1,dp(150)));}
         else if(active!=null)addRow(active,0);else for(Task task:roots)addProject(task);
     }
+    private TextView progressRing(int progress) {
+        TextView ring=text(progress+"%",progress==100?12:14,WHITE);
+        ring.setTypeface(null,Typeface.BOLD);ring.setGravity(Gravity.CENTER);
+        ring.setBackground(new android.graphics.drawable.Drawable(){
+            final android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override public void draw(android.graphics.Canvas canvas){
+                android.graphics.Rect b=getBounds();float w=dp(4), inset=w/2+dp(1);
+                android.graphics.RectF oval=new android.graphics.RectF(b.left+inset,b.top+inset,b.right-inset,b.bottom-inset);
+                paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(w);paint.setColor(GRAY);
+                canvas.drawOval(oval,paint);
+                if(progress>0){paint.setColor(BLUE);canvas.drawArc(oval,-90,360f*progress/100f,false,paint);}
+            }
+            @Override public void setAlpha(int alpha){paint.setAlpha(alpha);}
+            @Override public void setColorFilter(android.graphics.ColorFilter filter){paint.setColorFilter(filter);}
+            @Override public int getOpacity(){return android.graphics.PixelFormat.TRANSLUCENT;}
+        });
+        return ring;
+    }
     private void addProject(Task t){
         LinearLayout card=new LinearLayout(this);card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(67));lp.setMargins(0,dp(6),0,0);
-        TextView ring=text(percent(t)+"%",14,WHITE);ring.setTypeface(null,Typeface.BOLD);ring.setGravity(Gravity.CENTER);GradientDrawable border=bg(CARD,64);border.setStroke(dp(4),percent(t)==0?GRAY:BLUE);ring.setBackground(border);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
+        TextView ring=progressRing(percent(t));card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
         TextView name=text(t.name,16,WHITE);name.setMaxLines(2);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         TextView arrow=text("›",28,BLUE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));
         card.setOnClickListener(v->{active=t;render();});card.setOnLongClickListener(v->{options(t);return true;});rows.addView(card,lp);
@@ -66,8 +84,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,dp(67));cardLp.setMargins(dp(Math.min(depth,6)*17),dp(6),0,0);
         if(depth>0){TextView branch=text("└",25,GRAY);branch.setGravity(Gravity.CENTER);card.addView(branch,new LinearLayout.LayoutParams(dp(22),-1));}
         int progress=percent(t);
-        TextView ring=text(progress+"%",14,WHITE);ring.setTypeface(null,Typeface.BOLD);ring.setGravity(Gravity.CENTER);
-        GradientDrawable border=bg(CARD,64);border.setStroke(dp(4),progress==0?GRAY:BLUE);ring.setBackground(border);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
+        TextView ring=progressRing(progress);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
         TextView name=text(t.name,16,WHITE);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         if(!t.children.isEmpty()){TextView count=text(completed(t)+"/"+leaves(t),12,GRAY);card.addView(count);TextView arrow=text(t.expanded?"⌄":"›",25,WHITE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));arrow.setOnClickListener(v->{t.expanded=!t.expanded;save();render();});}
         else {CheckBox box=new CheckBox(this);box.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));box.setChecked(t.done);card.addView(box);box.setOnCheckedChangeListener((button,checked)->{t.done=checked;save();render();});}
