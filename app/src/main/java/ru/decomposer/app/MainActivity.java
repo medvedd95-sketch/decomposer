@@ -18,6 +18,7 @@ public final class MainActivity extends Activity {
     private static final int BACK = Color.rgb(8,10,14), CARD = Color.rgb(25,29,36), BLUE = Color.rgb(21,127,255), WHITE = Color.WHITE, GRAY = Color.rgb(148,155,167);
     private final ArrayList<Task> roots = new ArrayList<>();
     private LinearLayout rows;
+    private final ArrayDeque<String> undo=new ArrayDeque<>(), redo=new ArrayDeque<>();
     private Task active;
     private boolean workView=false;
     private long focusId=-1;
@@ -38,6 +39,7 @@ public final class MainActivity extends Activity {
         if(active!=null && !roots.contains(active))active=null;
         if(active!=null){TextView back=text("‹",32,WHITE);header.addView(back,new LinearLayout.LayoutParams(dp(40),dp(54)));back.setOnClickListener(v->{active=null;render();});}
         TextView title=text(active==null?"Декомпозитор":active.name,23,WHITE); title.setTypeface(null,Typeface.BOLD);header.addView(title,new LinearLayout.LayoutParams(0,dp(54),1));
+        header.addView(historyArrow(false),new LinearLayout.LayoutParams(dp(48),dp(48)));header.addView(historyArrow(true),new LinearLayout.LayoutParams(dp(48),dp(48)));
         page.addView(header);
         if(active==null){LinearLayout tabs=new LinearLayout(this);tabs.setPadding(dp(14),0,dp(14),0);
         TextView tree=text("Дерево задач",16,workView?GRAY:BLUE), work=text("В работе ("+workCount(roots)+")",16,workView?BLUE:GRAY);
@@ -95,7 +97,7 @@ public final class MainActivity extends Activity {
         TextView ring=progressRing(progress);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
         TextView name=text((t.working&&!finished(t)?"▶ ":"")+t.name+(t.comment.isEmpty()?"":"  ▤"),16,WHITE);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         if(!t.children.isEmpty()){TextView count=text(completed(t)+"/"+leaves(t),12,GRAY);card.addView(count);TextView arrow=text(t.expanded?"⌄":"›",25,WHITE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));arrow.setOnClickListener(v->{t.expanded=!t.expanded;save();render();});}
-        else {CheckBox box=new CheckBox(this);box.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));box.setChecked(t.done);card.addView(box);box.setOnCheckedChangeListener((button,checked)->{t.done=checked;save();render();});}
+        else {CheckBox box=new CheckBox(this);box.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));box.setChecked(t.done);card.addView(box);box.setOnCheckedChangeListener((button,checked)->{remember();t.done=checked;save();render();});}
         FrameLayout row=new FrameLayout(this);
         row.addView(new View(this){
             final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
@@ -128,25 +130,48 @@ public final class MainActivity extends Activity {
             workAction(card,"+ Добавить подзадачу",()->edit(t,null));
             workAction(card,"Комментарий / пояснение",()->edit(null,t));
             workAction(card,"Открыть в дереве",()->{active=root;expandPath(root,t);focusId=t.id;save();render();});
-            if(t.children.isEmpty())workAction(card,"Завершить",()->{t.done=true;save();render();});
-            workAction(card,"Убрать из работы",()->{t.working=false;save();render();});
+            if(t.children.isEmpty())workAction(card,"Завершить",()->{remember();t.done=true;save();render();});
+            workAction(card,"Убрать из работы",()->{remember();t.working=false;save();render();});
             for(Task c:t.children)workChild(card,c,0);
         }
         for(Task c:t.children)addWork(c,path.isEmpty()?t.name:path+" → "+t.name,root);
     }
-    private void workChild(LinearLayout card,Task t,int depth){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(Math.min(depth,6)*12),0,0,0);TextView name=text(t.name+(t.comment.isEmpty()?"":" ▤")+" · "+percent(t)+"%",14,WHITE);line.addView(name,new LinearLayout.LayoutParams(0,dp(44),1));name.setOnClickListener(v->options(t));if(t.children.isEmpty()){CheckBox cb=new CheckBox(this);cb.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));cb.setChecked(t.done);line.addView(cb);cb.setOnCheckedChangeListener((b,c)->{t.done=c;save();render();});}card.addView(line);for(Task c:t.children)workChild(card,c,depth+1);}
-    private void options(Task t){String[] choices={"Добавить подзадачу","Редактировать / комментарий","Переместить","Удалить",t.working?"Убрать из работы":"Взять в работу"};new AlertDialog.Builder(this).setTitle(t.name).setItems(choices,(dialog,which)->{if(which==0)edit(t,null);if(which==1)edit(null,t);if(which==2)move(t);if(which==3)delete(t);if(which==4){if(!t.working&&finished(t)){Toast.makeText(this,"Задача уже выполнена",Toast.LENGTH_SHORT).show();return;}t.working=!t.working;save();render();}}).show();}
+    private void workChild(LinearLayout card,Task t,int depth){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(Math.min(depth,6)*12),0,0,0);TextView name=text(t.name+(t.comment.isEmpty()?"":" ▤")+" · "+percent(t)+"%",14,WHITE);line.addView(name,new LinearLayout.LayoutParams(0,dp(44),1));name.setOnClickListener(v->options(t));if(t.children.isEmpty()){CheckBox cb=new CheckBox(this);cb.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));cb.setChecked(t.done);line.addView(cb);cb.setOnCheckedChangeListener((b,c)->{remember();t.done=c;save();render();});}card.addView(line);for(Task c:t.children)workChild(card,c,depth+1);}
+    private void options(Task t){String[] choices={"Добавить подзадачу","Редактировать / комментарий","Переместить","Удалить",t.working?"Убрать из работы":"Взять в работу","Дублировать"};new AlertDialog.Builder(this).setTitle(t.name).setItems(choices,(dialog,which)->{if(which==0)edit(t,null);if(which==1)edit(null,t);if(which==2)move(t);if(which==3)delete(t);if(which==5)duplicate(t);if(which==4){if(!t.working&&finished(t)){Toast.makeText(this,"Задача уже выполнена",Toast.LENGTH_SHORT).show();return;}remember();t.working=!t.working;save();render();}}).show();}
     private void edit(Task parent,Task editing){EditText input=new EditText(this);input.setSingleLine(false);input.setTextColor(WHITE);input.setHintTextColor(GRAY);input.setHint("Название задачи");if(editing!=null)input.setText(editing.name);
         LinearLayout wrap=new LinearLayout(this);wrap.setOrientation(LinearLayout.VERTICAL);wrap.setPadding(dp(20),0,dp(20),0);wrap.addView(input,new LinearLayout.LayoutParams(-1,-2));
         EditText comment=new EditText(this);comment.setTextColor(WHITE);comment.setHintTextColor(GRAY);comment.setHint("Комментарий / пояснение");comment.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);comment.setMinLines(3);comment.setMaxLines(7);comment.setGravity(Gravity.TOP);if(editing!=null)comment.setText(editing.comment);wrap.addView(comment,new LinearLayout.LayoutParams(-1,-2));
-        new AlertDialog.Builder(this).setTitle(editing!=null?"Редактирование задачи":"Новая задача").setView(wrap).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{String s=input.getText().toString().trim();if(s.isEmpty())return;if(editing!=null){editing.name=s;editing.comment=comment.getText().toString();}else{Task n=new Task(nextId++,s);n.comment=comment.getText().toString();if(parent==null)roots.add(n);else{parent.children.add(n);parent.expanded=true;parent.done=false;}}save();render();}).show(); }
-    private void delete(Task t){new AlertDialog.Builder(this).setTitle("Удалить задачу?").setMessage("Все вложенные подзадачи тоже будут удалены.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{remove(t,roots);save();render();}).show();}
+        new AlertDialog.Builder(this).setTitle(editing!=null?"Редактирование задачи":"Новая задача").setView(wrap).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{String s=input.getText().toString().trim();if(s.isEmpty())return;if(editing!=null&&editing.name.equals(s)&&editing.comment.equals(comment.getText().toString()))return;remember();if(editing!=null){editing.name=s;editing.comment=comment.getText().toString();}else{Task n=new Task(nextId++,s);n.comment=comment.getText().toString();if(parent==null)roots.add(n);else{parent.children.add(n);parent.expanded=true;parent.done=false;}}save();render();}).show(); }
+    private void delete(Task t){new AlertDialog.Builder(this).setTitle("Вы точно хотите удалить задачу?").setMessage(t.name+"\nВсе вложенные подзадачи тоже будут удалены.").setNegativeButton("Нет",null).setPositiveButton("Да",(d,w)->{remember();remove(t,roots);save();render();}).show();}
     private boolean remove(Task t,List<Task> list){if(list.remove(t))return true;for(Task c:list)if(remove(t,c.children))return true;return false;}
     private boolean contains(Task a,Task b){if(a==b)return true;for(Task x:a.children)if(contains(x,b))return true;return false;}
-    private void move(Task t){ArrayList<Task> possible=new ArrayList<>();ArrayList<String> names=new ArrayList<>();names.add("В корень дерева");collect(roots,possible,names,t,0);new AlertDialog.Builder(this).setTitle("Переместить в...").setItems(names.toArray(new String[0]),(d,i)->{Task parent=i==0?null:possible.get(i-1);if(parent==null && roots.contains(t))return;remove(t,roots);if(parent==null)roots.add(t);else{parent.children.add(t);parent.expanded=true;parent.done=false;}save();render();}).show();}
+    private void move(Task t){ArrayList<Task> possible=new ArrayList<>();ArrayList<String> names=new ArrayList<>();names.add("В корень дерева");collect(roots,possible,names,t,0);new AlertDialog.Builder(this).setTitle("Переместить в...").setItems(names.toArray(new String[0]),(d,i)->{Task parent=i==0?null:possible.get(i-1);if(parent==null && roots.contains(t))return;remember();remove(t,roots);if(parent==null)roots.add(t);else{parent.children.add(t);parent.expanded=true;parent.done=false;}save();render();}).show();}
     private void collect(List<Task> list,List<Task> out,List<String> names,Task moving,int depth){for(Task t:list){if(contains(moving,t))continue;out.add(t);StringBuilder indent=new StringBuilder();for(int n=0;n<Math.min(8,depth);n++)indent.append("  ");names.add(indent.toString()+t.name);collect(t.children,out,names,moving,depth+1);}}
     private JSONObject toJson(Task t)throws Exception{JSONObject o=new JSONObject();o.put("id",t.id);o.put("name",t.name);o.put("comment",t.comment);o.put("done",t.done);o.put("working",t.working);o.put("expanded",t.expanded);JSONArray a=new JSONArray();for(Task c:t.children)a.put(toJson(c));o.put("children",a);return o;}
     private Task fromJson(JSONObject o)throws Exception{Task t=new Task(o.getLong("id"),o.getString("name"));t.comment=o.optString("comment","");t.done=o.optBoolean("done");t.working=o.optBoolean("working",false);t.expanded=o.optBoolean("expanded",true);nextId=Math.max(nextId,t.id+1);JSONArray a=o.optJSONArray("children");if(a!=null)for(int i=0;i<a.length();i++)t.children.add(fromJson(a.getJSONObject(i)));return t;}
-    private void save(){try{for(Task t:roots)clearFinished(t);JSONArray a=new JSONArray();for(Task t:roots)a.put(toJson(t));getPreferences(Context.MODE_PRIVATE).edit().putString("tasks",a.toString()).apply();}catch(Exception e){android.util.Log.e("Decomposer","Save failed",e);}}
-    private void load(){try{String data=getPreferences(Context.MODE_PRIVATE).getString("tasks",null);if(data==null)return;JSONArray a=new JSONArray(data);for(int i=0;i<a.length();i++)roots.add(fromJson(a.getJSONObject(i)));}catch(Exception e){android.util.Log.e("Decomposer","Load failed",e);}}
+    private View historyArrow(boolean forward){
+        boolean enabled=!(forward?redo:undo).isEmpty();
+        View v=new View(this){
+            final android.graphics.Paint p=new android.graphics.Paint(3);
+            @Override protected void onDraw(android.graphics.Canvas c){
+                c.save();c.translate(getWidth()/2f,getHeight()/2f);c.scale(forward?-dp(18)/20f:dp(18)/20f,dp(18)/20f);
+                p.setColor(enabled?WHITE:Color.rgb(65,70,78));p.setStyle(android.graphics.Paint.Style.STROKE);p.setStrokeWidth(1.8f);p.setStrokeCap(android.graphics.Paint.Cap.ROUND);p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+                android.graphics.Path path=new android.graphics.Path();path.moveTo(9,7);path.cubicTo(9,-9,-5,-9,-9,0);path.moveTo(-9,-7);path.lineTo(-9,0);path.lineTo(-2,0);c.drawPath(path,p);c.restore();
+            }
+        };v.setContentDescription(forward?"Вернуть действие":"Отменить действие");v.setEnabled(enabled);v.setOnClickListener(x->restoreHistory(forward));return v;
+    }
+    private String snapshot() throws Exception{JSONArray a=new JSONArray();for(Task t:roots)a.put(toJson(t));return a.toString();}
+    private void push(ArrayDeque<String> stack,String value){stack.addLast(value);while(stack.size()>50)stack.removeFirst();}
+    private void remember(){try{push(undo,snapshot());redo.clear();}catch(Exception e){android.util.Log.e("Decomposer","History failed",e);}}
+    private void restoreHistory(boolean forward){ArrayDeque<String> source=forward?redo:undo,target=forward?undo:redo;if(source.isEmpty())return;
+        try{String current=snapshot();JSONArray a=new JSONArray(source.peekLast());ArrayList<Task> restored=new ArrayList<>();for(int i=0;i<a.length();i++)restored.add(fromJson(a.getJSONObject(i)));
+            long id=active==null?-1:active.id;source.removeLast();push(target,current);roots.clear();roots.addAll(restored);active=null;for(Task t:roots)if(t.id==id)active=t;focusId=-1;save();render();
+        }catch(Exception e){android.util.Log.e("Decomposer","Restore failed",e);}
+    }
+    private Task copyTask(Task t){Task n=new Task(nextId++,t.name);n.comment=t.comment;n.expanded=t.expanded;for(Task c:t.children)n.children.add(copyTask(c));return n;}
+    private List<Task> siblings(Task t,List<Task> list){if(list.contains(t))return list;for(Task c:list){List<Task> found=siblings(t,c.children);if(found!=null)return found;}return null;}
+    private void duplicate(Task t){List<Task> list=siblings(t,roots);if(list==null)return;remember();list.add(list.indexOf(t)+1,copyTask(t));save();render();}
+    private void readHistory(String key,ArrayDeque<String> stack)throws Exception{JSONArray a=new JSONArray(getPreferences(Context.MODE_PRIVATE).getString(key,"[]"));for(int i=0;i<a.length();i++)push(stack,a.getString(i));}
+    private void save(){try{for(Task t:roots)clearFinished(t);JSONArray a=new JSONArray();for(Task t:roots)a.put(toJson(t));getPreferences(Context.MODE_PRIVATE).edit().putString("tasks",a.toString()).putString("undo",new JSONArray(undo).toString()).putString("redo",new JSONArray(redo).toString()).apply();}catch(Exception e){android.util.Log.e("Decomposer","Save failed",e);}}
+    private void load(){try{String data=getPreferences(Context.MODE_PRIVATE).getString("tasks",null);if(data==null)return;JSONArray a=new JSONArray(data);for(int i=0;i<a.length();i++)roots.add(fromJson(a.getJSONObject(i)));readHistory("undo",undo);readHistory("redo",redo);}catch(Exception e){android.util.Log.e("Decomposer","Load failed",e);}}
 }
