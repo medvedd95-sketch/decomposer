@@ -32,6 +32,13 @@ public final class MainActivity extends Activity {
     private int dp(float n) { return (int)(n*getResources().getDisplayMetrics().density+0.5f); }
     private GradientDrawable bg(int color, int radius) { GradientDrawable d=new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
     private TextView text(String s, int size, int color) { TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);t.setGravity(Gravity.CENTER_VERTICAL); return t; }
+    private TextView taskName(Task t,int size,String commentMark,String suffix){
+        boolean working=t.working&&!finished(t);
+        String label=(working?"▶ ":"")+t.name+(t.comment.isEmpty()?"":commentMark)+suffix;
+        TextView v=text(label,size,WHITE);
+        if(working){android.text.SpannableString span=new android.text.SpannableString(label);span.setSpan(new android.text.style.ForegroundColorSpan(0xff22c55e),0,1,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);v.setText(span);}
+        v.setSingleLine(true);v.setEllipsize(android.text.TextUtils.TruncateAt.END);return v;
+    }
     private void render() {
         FrameLayout frame = new FrameLayout(this); frame.setBackgroundColor(BACK);
         LinearLayout page=new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
@@ -46,7 +53,7 @@ public final class MainActivity extends Activity {
         for(TextView tab:new TextView[]{tree,work}){tab.setGravity(Gravity.CENTER);tabs.addView(tab,new LinearLayout.LayoutParams(0,dp(48),1));}
         tree.setOnClickListener(v->{workView=false;render();});work.setOnClickListener(v->{workView=true;render();});page.addView(tabs);}
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true);
-        rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);if(active!=null){HorizontalScrollView horizontal=new HorizontalScrollView(this);horizontal.setFillViewport(true);horizontal.addView(rows,new FrameLayout.LayoutParams(-2,-2));scroll.addView(horizontal,new FrameLayout.LayoutParams(-1,-2));int width=getResources().getDisplayMetrics().widthPixels;rows.setMinimumWidth(width+dp(Math.max(0,visibleDepth(active)-3)*32));}else scroll.addView(rows);
+        rows=new LinearLayout(this);rows.setPadding(dp(14),dp(8),dp(14),dp(84));rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows,new FrameLayout.LayoutParams(-1,-2));
         page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));frame.addView(page);
         TextView fab=text("+",36,WHITE);fab.setGravity(Gravity.CENTER);fab.setBackground(bg(BLUE,50));FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(60),dp(60),Gravity.BOTTOM|Gravity.RIGHT);fp.setMargins(0,0,dp(24),dp(24));frame.addView(fab,fp);fab.setOnClickListener(v->edit(active,null));fab.setContentDescription("Добавить задачу");if(active==null && workView)fab.setVisibility(View.GONE);
         if(android.os.Build.VERSION.SDK_INT>=35) frame.setOnApplyWindowInsetsListener((v,insets)->{
@@ -84,30 +91,32 @@ public final class MainActivity extends Activity {
         LinearLayout card=new LinearLayout(this);card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(67));lp.setMargins(0,dp(6),0,0);
         TextView ring=progressRing(percent(t));card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
-        TextView name=text((t.working&&!finished(t)?"▶ ":"")+t.name+(t.comment.isEmpty()?"":"  ▤"),16,WHITE);name.setMaxLines(2);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
+        TextView name=taskName(t,16,"  ▤","");name.setSingleLine(true);name.setEllipsize(android.text.TextUtils.TruncateAt.END);LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
         TextView arrow=text("›",28,BLUE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));
         card.setOnClickListener(v->{active=t;render();});card.setOnLongClickListener(v->{options(t);return true;});rows.addView(card,lp);
     }
     private int visibleDepth(Task t){int n=0;if(t.expanded)for(Task c:t.children)n=Math.max(n,1+visibleDepth(c));return n;}
     private void addRow(Task t,int depth){addRow(t,depth,new ArrayList<Boolean>());}
+    private int treeIndent(int depth){int available=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);return Math.min(depth*32,Math.max(0,available-220));}
     private void addRow(Task t,int depth,List<Boolean> continuations) {
+        final int indent=treeIndent(depth);
         LinearLayout card=new LinearLayout(this); card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(8),dp(7),dp(8),dp(7));card.setBackground(bg(CARD,18));
-        LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,dp(depth==0?67:60));cardLp.setMargins(dp(depth*32),dp(6),0,0);
+        LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,dp(depth==0?67:60));cardLp.setMargins(dp(indent),dp(6),0,0);
         int progress=percent(t);
         TextView ring=progressRing(progress);card.addView(ring,new LinearLayout.LayoutParams(dp(47),dp(47)));
-        TextView name=text((t.working&&!finished(t)?"▶ ":"")+t.name+(t.comment.isEmpty()?"":"  ▤"),16,WHITE);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
-        if(!t.children.isEmpty()){TextView count=text(completed(t)+"/"+leaves(t),12,GRAY);card.addView(count);TextView arrow=text(t.expanded?"⌄":"›",25,WHITE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));arrow.setOnClickListener(v->{t.expanded=!t.expanded;save();render();});}
+        TextView name=taskName(t,16,"  ▤","");name.setSingleLine(true);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(0,-1,1);np.setMargins(dp(12),0,dp(4),0);card.addView(name,np);
+        if(!t.children.isEmpty()){TextView count=text(completed(t)+"/"+leaves(t),12,GRAY);card.addView(count);TextView arrow=text(t.expanded?"⌄":"›",25,t.expanded?0xfffbbf24:WHITE);arrow.setGravity(Gravity.CENTER);card.addView(arrow,new LinearLayout.LayoutParams(dp(32),-1));arrow.setOnClickListener(v->{t.expanded=!t.expanded;save();render();});}
         else {CheckBox box=new CheckBox(this);box.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));box.setChecked(t.done);card.addView(box);box.setOnCheckedChangeListener((button,checked)->{remember();t.done=checked;save();render();});}
         FrameLayout row=new FrameLayout(this);
         row.addView(new View(this){
             final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(android.graphics.Canvas c){super.onDraw(c);p.setColor(GRAY);p.setStrokeWidth(dp(1.5f));p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
                 float mid=dp(6+(depth==0?67:60)/2f);
-                for(int i=0;i<depth;i++){float x=dp(i*32+16);boolean last=i==depth-1;if(last){c.drawLine(x,0,x,mid,p);c.drawLine(x,mid,dp(depth*32+3),mid,p);if(continuations.get(i))c.drawLine(x,mid,x,getHeight(),p);}else if(continuations.get(i))c.drawLine(x,0,x,getHeight(),p);}
+                for(int i=0;i<depth;i++){float x=dp((treeIndent(i)+treeIndent(i+1))/2f);boolean last=i==depth-1;if(last){c.drawLine(x,0,x,mid,p);c.drawLine(x,mid,dp(indent+3),mid,p);if(continuations.get(i))c.drawLine(x,mid,x,getHeight(),p);}else if(continuations.get(i))c.drawLine(x,0,x,getHeight(),p);}
             }
         },new FrameLayout.LayoutParams(-1,-1));
-        FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(-1,cardLp.height);cp.setMargins(depth*dp(32),dp(6),0,0);row.addView(card,cp);
-        if(t.expanded&&!t.children.isEmpty()){View stem=new View(this);stem.setBackgroundColor(GRAY);FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(dp(1.5f),dp(6),Gravity.BOTTOM|Gravity.LEFT);sp.leftMargin=dp(depth*32+16);row.addView(stem,sp);}
+        FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(-1,cardLp.height);cp.setMargins(dp(indent),dp(6),0,0);row.addView(card,cp);
+        if(t.expanded&&!t.children.isEmpty()){View stem=new View(this);stem.setBackgroundColor(GRAY);FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(dp(1.5f),dp(6),Gravity.BOTTOM|Gravity.LEFT);sp.leftMargin=dp(indent+Math.max(0,(treeIndent(depth+1)-indent)/2));row.addView(stem,sp);}
         rows.addView(row,new LinearLayout.LayoutParams(-1,dp((depth==0?67:60)+12)));if(t.id==focusId){focusId=-1;card.post(()->card.requestRectangleOnScreen(new android.graphics.Rect(0,0,card.getWidth(),card.getHeight()),true));}
         name.setOnClickListener(v->options(t));ring.setOnClickListener(v->options(t));card.setOnLongClickListener(v->{options(t);return true;});
         if(t.expanded)for(int i=0;i<t.children.size();i++){ArrayList<Boolean> next=new ArrayList<>(continuations);next.add(i<t.children.size()-1);addRow(t.children.get(i),depth+1,next);}
@@ -125,7 +134,7 @@ public final class MainActivity extends Activity {
         if(t.working&&!finished(t)){
             LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(12),dp(10),dp(12),dp(10));card.setBackground(bg(CARD,18));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(8),0,0);rows.addView(card,lp);
-            LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(progressRing(percent(t)),new LinearLayout.LayoutParams(dp(47),dp(47)));TextView name=text("▶ "+t.name,16,WHITE);name.setPadding(dp(12),0,0,0);top.addView(name,new LinearLayout.LayoutParams(0,-2,1));card.addView(top);
+            LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(progressRing(percent(t)),new LinearLayout.LayoutParams(dp(47),dp(47)));TextView name=taskName(t,16,"","");name.setPadding(dp(12),0,0,0);top.addView(name,new LinearLayout.LayoutParams(0,-2,1));card.addView(top);
             card.addView(text(path.isEmpty()?"Проект":path,12,GRAY));
             workAction(card,"+ Добавить подзадачу",()->edit(t,null));
             workAction(card,"Комментарий / пояснение",()->edit(null,t));
@@ -136,7 +145,7 @@ public final class MainActivity extends Activity {
         }
         for(Task c:t.children)addWork(c,path.isEmpty()?t.name:path+" → "+t.name,root);
     }
-    private void workChild(LinearLayout card,Task t,int depth){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(Math.min(depth,6)*12),0,0,0);TextView name=text(t.name+(t.comment.isEmpty()?"":" ▤")+" · "+percent(t)+"%",14,WHITE);line.addView(name,new LinearLayout.LayoutParams(0,dp(44),1));name.setOnClickListener(v->options(t));if(t.children.isEmpty()){CheckBox cb=new CheckBox(this);cb.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));cb.setChecked(t.done);line.addView(cb);cb.setOnCheckedChangeListener((b,c)->{remember();t.done=c;save();render();});}card.addView(line);for(Task c:t.children)workChild(card,c,depth+1);}
+    private void workChild(LinearLayout card,Task t,int depth){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(Math.min(depth,6)*12),0,0,0);TextView name=taskName(t,14," ▤"," · "+percent(t)+"%");line.addView(name,new LinearLayout.LayoutParams(0,dp(44),1));name.setOnClickListener(v->options(t));if(t.children.isEmpty()){CheckBox cb=new CheckBox(this);cb.setButtonTintList(android.content.res.ColorStateList.valueOf(BLUE));cb.setChecked(t.done);line.addView(cb);cb.setOnCheckedChangeListener((b,c)->{remember();t.done=c;save();render();});}card.addView(line);for(Task c:t.children)workChild(card,c,depth+1);}
     private void options(Task t){
         String[] labels={"Добавить подзадачу","Редактировать / комментарий",t.working?"Убрать из работы":"Взять в работу","Дублировать","Переместить","Удалить"};
         String[] symbols={"+","✎",t.working?"Ⅱ":"▶","▢","✥",""};
